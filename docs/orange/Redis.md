@@ -1,5 +1,93 @@
 ## 2016版
 
+## 安装
+```shell
+$ wget http://download.redis.io/releases/redis-5.0.7.tar.gz
+$ tar xzf redis-5.0.7.tar.gz
+$ cd redis-5.0.7
+$ make
+```
+Redis编译需要以下组件，make，gcc  
+进入redis目录后执行make  
+```shell
+出现以下，则代表未安装gcc
+make[3]: Entering directory '/opt/redis-5.0.7/deps/hiredis'
+gcc -std=c99 -pedantic -c -O3 -fPIC  -Wall -W -Wstrict-prototypes -Wwrite-strings -g -ggdb  net.c
+make[3]: gcc: Command not found
+make[3]: *** [Makefile:156: net.o] Error 127
+make[3]: Leaving directory '/opt/redis-5.0.7/deps/hiredis'
+make[2]: *** [Makefile:46: hiredis] Error 2
+make[2]: Leaving directory '/opt/redis-5.0.7/deps'
+make[1]: [Makefile:200: persist-settings] Error 2 (ignored)
+    CC adlist.o
+/bin/sh: 1: cc: not found
+make[1]: *** [Makefile:248: adlist.o] Error 127
+make[1]: Leaving directory '/opt/redis-5.0.7/src'
+make: *** [Makefile:6: all] Error 2
+
+```
+```shell
+In file included from adlist.c:34:
+zmalloc.h:50:10: fatal error: jemalloc/jemalloc.h: No such file or directory
+ #include <jemalloc/jemalloc.h>
+```
+
+这个错误是由于jemalloc重载了Linux下的ANSI C的malloc和free函数，make的时候添加`make MALLOC=libc`即可  
+当出现`Hint: It's a good idea to run 'make test' ;`表示make成功  
+进入src，目录，可以删除后缀名为`.c` `.h` `.o`的文件，使得目录整洁点 
+
+## 配置文件
+```shell 
+daemonize yes 是否在后台执行，是yes，否no
+pidfile /var/run/redis/redis.pid redis的进程文件
+databases 16 数据库的数量，默认使用的数据库是0。可以通过”SELECT 【数据库序号】“命令选择一个数据库，序号从0开始
+save 900 1 save 300 10 save 60 10000 RDB持久化规则配置，满足900秒内达到1次更改、300秒内10次更改、60秒内达到10000次更改，就持久化到硬盘
+rdbchecksum yes 是否校验rdb文件;从rdb格式的第五个版本开始，在rdb文件的末尾会带上CRC64的校验和。这跟有利于文件的容错性，但是在保存rdb文件的时候，会有大概10%的性能损耗，所以如果你追求高性能，可以关闭该配置
+dbfilename dump.rdb 指定本地数据库文件名，一般采用默认的 dump.rdb
+dir /usr/local/redis/var 数据目录，数据库的写入会在这个目录。rdb、aof文件也会写在这个目录
+replica-priority 100 当master不可用，Sentinel会根据slave的优先级选举一个master。最低的优先级的slave，当选master 而配置成0，永远不会被选举
+requirepass foobared requirepass配置可以让用户使用AUTH命令来认证密码，才能使用其他命令。这让redis可以使用在不受信任的
+maxclients 10000 设置能连上redis的最大客户端连接数量。默认是10000个客户端连接。由于redis不区分连接是客户端连接还是内部打开文件或者和slave连接等，所以maxclients最小建议设置到32。如果超过了maxclients，redis会给新的连接发送’max number of clients reached’，并关闭连接
+maxmemory 122000000 redis配置的最大内存容量。当内存满了，需要配合maxmemory-policy策略进行处理。注意slave的输出缓冲区是不计算在maxmemory内的。所以为了防止主机内存使用完，建议设置的maxmemory需要更小一些
+
+#内存容量超过maxmemory后的处理策略。
+#volatile-lru：利用LRU算法移除设置过过期时间的key。
+#volatile-random：随机移除设置过过期时间的key。
+#volatile-ttl：移除即将过期的key，根据最近过期时间来删除（辅以TTL）
+#allkeys-lru：利用LRU算法移除任何key。
+#allkeys-lru：利用LRU算法移除任何key。
+#allkeys-random：随机移除任何key。
+#noeviction：不移除任何key，只是返回一个写错误。
+#上面的这些驱逐策略，如果redis没有合适的key驱逐，对于写命令，还是会返回错误。redis将不再接收写请求，只接收get请求。写命令包括：set setnx setex append incr decr rpush lpush rpushx lpushx linsert lset rpoplpush sadd sinter sinterstore sunion sunionstore sdiff sdiffstore zadd zincrby zunionstore zinterstore hset hsetnx hmset hincrby incrby decrby getset mset msetnx exec sort。
+# maxmemory-policy noeviction
+
+appendonly no Redis 默认不开启。它的出现是为了弥补RDB的不足（数据的不一致性），所以它采用日志的形式来记录每个写操作
+appendfilename "appendonly.aof" 指定本地数据库文件名，默认值为 appendonly.aof
+
+#aof持久化策略的配置
+#no表示不执行fsync，由操作系统保证数据同步到磁盘，速度最快
+#always表示每次写入都执行fsync，以保证数据同步到磁盘
+#everysec表示每秒执行一次fsync，可能会导致丢失这1s数据
+# appendfsync always
+appendfsync everysec
+# appendfsync no
+
+no-appendfsync-on-rewrite no #fsync会造成阻塞过长时间，no-appendfsync-on-rewrite字段设置为默认设置为no。如果对延迟要求很高的应用，这个字段可以设置为yes，否则还是设置为no，这样对持久化特性来说这是更安全的选择。设置为yes表示rewrite期间对新写操作不fsync,暂时存在内存中,等rewrite完成后再写入，默认为no，建议yes。Linux的默认fsync策略是30秒。可能丢失30秒数据
+auto-aof-rewrite-percentage 100 #aof自动重写配置。当目前aof文件大小超过上一次重写的aof文件大小的百分之多少进行重写，即当aof文件增长到一定大小的时候Redis能够调用bgrewriteaof对日志文件进行重写。当前AOF文件大小是上次日志重写得到AOF文件大小的二倍（设置为100）时，自动启动新的日志重写过程
+auto-aof-rewrite-min-size 64mb #设置允许重写的最小aof文件大小，避免了达到约定百分比但尺寸仍然很小的情况还要重写
+aof-load-truncated yes #aof文件可能在尾部是不完整的，当redis启动的时候，aof文件的数据被载入内存。重启可能发生在redis所在的主机操作系统宕机后，尤其在ext4文件系统没有加上data=ordered选项（redis宕机或者异常终止不会造成尾部不完整现象。）出现这种现象，可以选择让redis退出，或者导入尽可能多的数据。如果选择的是yes，当截断的aof文件被导入的时候，会自动发布一个log给客户端然后load。如果是no，用户必须手动redis-check-aof修复AOF文件才可以
+cluster-enabled yes #集群开关，默认是不开启集群模式
+cluster-config-file nodes-6379.conf #集群配置文件的名称，每个节点都有一个集群相关的配置文件，持久化保存集群的信息。这个文件并不需要手动配置，这个配置文件有Redis生成并更新，每个Redis集群节点需要一个单独的配置文件，请确保与实例运行的系统中配置文件名称不冲突
+cluster-node-timeout 15000 #节点互连超时的阀值。集群节点超时毫秒数
+cluster-replica-validity-factor 10 #在进行故障转移的时候，全部slave都会请求申请为master，但是有些slave可能与master断开连接一段时间了，导致数据过于陈旧，这样的slave不应该被提升为master。该参数就是用来判断slave节点与master断线的时间是否过长。判断方法是：比较slave断开连接的时间和(node-timeout * slave-validity-factor) + repl-ping-slave-period 如果节点超时时间为三十秒, 并且slave-validity-factor为10,假设默认的repl-ping-slave-period是10秒，即如果超过310秒slave将不会尝试进行故障转移
+cluster-migration-barrier 1 #master的slave数量大于该值，slave才能迁移到其他孤立master上，如这个参数若被设为2，那么只有当一个主节点拥有2 个可工作的从节点时，它的一个从节点会尝试迁移
+client-output-buffer-limit replica 256mb 64mb 60 #对于slave client和MONITER client，如果client-output-buffer一旦超过256mb，又或者超过64mb持续60秒，那么服务器就会立即断开客户端连接
+client-output-buffer-limit pubsub 32mb 8mb 60 #对于pubsub client，如果client-output-buffer一旦超过32mb，又或者超过8mb持续60秒，那么服务器就会立即断开客户端连接
+
+aof-rewrite-incremental-fsync yes #在aof重写的时候，如果打开了aof-rewrite-incremental-fsync开关，系统会每32MB执行一次fsync。这对于把文件写入磁盘是有帮助的，可以避免过大的延迟峰值
+rdb-save-incremental-fsync yes #在rdb保存的时候，如果打开了rdb-save-incremental-fsync开关，系统会每32MB执行一次fsync。这对于把文件写入磁盘是有帮助的，可以避免过大的延迟峰值
+```
+
 ### 1、nosql是什么？
     
 泛指非关系型数据库，这些类型的数据存储不需要固定的模式，无需多余操作就可以横向扩展，优点易扩展，读写效率高，多样灵活的数据类型（mysql增删字段麻烦）
@@ -85,7 +173,7 @@ AOF劣势：
 
 ### 9、redis的事务
 
-是什么：可以一次执行多个命令，本质时一组命令的集合，一个事务中所有命令都会序列化，**按顺序地串行化执行而不会被其他命令插入，不许加塞**。
+是什么：可以一次执行多个命令，本质是一组命令的集合，一个事务中所有命令都会序列化，**按顺序地串行化执行而不会被其他命令插入，不许加塞**。
 
 能干嘛：一个队列中，一次性，顺序性，排他性的执行一系列命令。
 
@@ -113,7 +201,7 @@ AOF劣势：
 
     一主二仆：从机读，主机写，如果从机写入和主机一样的会报错，实现读写分离，如果主机挂了，其他两台从机依旧是从机的身份，默认配置，主机重启依旧是主机，从机原地待命，但是如果从机挂掉之后，再重启，该从机会恢复成原来默认的master，需重新设置为master的从机才行
 
-    薪火相传：上一个slave可以是下一个slave的master，slave同样可以接收其他slaves的连接和同步请求，那么该slave作为了链条中下一个的master，可以有效减轻master的写压力，中途变更转向：会清除之前的数据，重新简历拷贝最新的，SLAVEOF 新机ip:新机端口
+    薪火相传：上一个slave可以是下一个slave的master，slave同样可以接收其他slaves的连接和同步请求，那么该slave作为了链条中下一个的master，可以有效减轻master的写压力，中途变更转向：会清除之前的数据，重新拷贝最新的，SLAVEOF 新机ip:新机端口
 
     反客为主：SLAVEOF no one（将当前从机设置成为master）
 
@@ -197,7 +285,7 @@ SLAVEOF 127.0.0.1:6379：做6379的slave，作为备份
 
 不依赖业务逻辑方式存储，而以简单的k/v形式存储，因此大大的增加了数据库的扩展能力，不遵循sql标准，不支持ACID，远超于sql的性能。
 
-适用场景：对数据高并发的读写、海量数据的读写、对数据可扩展性的
+适用场景：对数据高并发的读写、海量数据的读写、对数据可扩展性的读写
 
 不适用场景：需要事务支持（和ACID无关）、基于sql的结构化查询存储，处理复杂的关系，需要即席查询（条件查询）
 
@@ -389,6 +477,10 @@ redis集群模式：
 redis-cli -c：会实现自动重定向，不是一个slot下的键值，是不能使用mget、mset等多键操作
 
 可以通过{}来定义组的概念，从而使key中{}内相同内容的键值对放到同一个slot中去，eg.set a{user} 1 or set a{user} 2 都会将值设置在同一个slot
+
+### 12、布隆过滤器
+
+> 本质上布隆过滤器是一种数据结构，比较巧妙的概率型数据结构（probabilistic data structure），特点是高效地插入和查询，可以用来告诉你 “某样东西一定不存在或者可能存在”，相比于传统的 List、Set、Map 等数据结构，它更高效、占用空间更少，但是缺点是其返回的结果是概率性的，而不是确切的
 
 ## 额外
 
