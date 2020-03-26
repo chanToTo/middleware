@@ -41,7 +41,10 @@ zmalloc.h:50:10: fatal error: jemalloc/jemalloc.h: No such file or directory
 daemonize yes 是否在后台执行，是yes，否no
 pidfile /var/run/redis/redis.pid redis的进程文件
 databases 16 数据库的数量，默认使用的数据库是0。可以通过”SELECT 【数据库序号】“命令选择一个数据库，序号从0开始
-save 900 1 save 300 10 save 60 10000 RDB持久化规则配置，满足900秒内达到1次更改、300秒内10次更改、60秒内达到10000次更改，就持久化到硬盘
+RDB持久化规则配置，满足900秒内达到1次更改、300秒内10次更改、60秒内达到10000次更改，就持久化到硬盘
+save 900 1 
+save 300 10 
+save 60 10000 
 rdbchecksum yes 是否校验rdb文件;从rdb格式的第五个版本开始，在rdb文件的末尾会带上CRC64的校验和。这跟有利于文件的容错性，但是在保存rdb文件的时候，会有大概10%的性能损耗，所以如果你追求高性能，可以关闭该配置
 dbfilename dump.rdb 指定本地数据库文件名，一般采用默认的 dump.rdb
 dir /usr/local/redis/var 数据目录，数据库的写入会在这个目录。rdb、aof文件也会写在这个目录
@@ -86,6 +89,14 @@ client-output-buffer-limit pubsub 32mb 8mb 60 #对于pubsub client，如果clien
 
 aof-rewrite-incremental-fsync yes #在aof重写的时候，如果打开了aof-rewrite-incremental-fsync开关，系统会每32MB执行一次fsync。这对于把文件写入磁盘是有帮助的，可以避免过大的延迟峰值
 rdb-save-incremental-fsync yes #在rdb保存的时候，如果打开了rdb-save-incremental-fsync开关，系统会每32MB执行一次fsync。这对于把文件写入磁盘是有帮助的，可以避免过大的延迟峰值
+
+如果不指定配置文件启动，默认redis是bind127.0.0.1，端口是6379,这样会导致我们无法从外部访问redis。
+所以编辑在安装目录下的redis.conf，对redis进行一些配置
+1、将bind 127.0.0.1改为0.0.0.0
+2、将protected-mode 设置为no
+3、将daemonize 修改为yes。这样redis是后台启动
+
+启动时指定redis配置文件./src/redis-server ./redis.conf
 ```
 
 ### 1、nosql是什么？
@@ -278,6 +289,7 @@ SLAVEOF 127.0.0.1:6379：做6379的slave，作为备份
     并集：sunion
 
 32. hset/hget/hmset/hmget/hgetall/hdel：eg hset user name z3(user为key，name和z3为value，并且是一个键值对)
+33. exists查看是否存在某个key
 
 ## 2019版
 
