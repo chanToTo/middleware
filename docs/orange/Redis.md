@@ -151,6 +151,20 @@ CAP理论就是说在分布式存储系统中，最多只能实现上面的两�
 > - Set（集合）：是string类型的无序集合，通过hashtable实现
 > - ZSet（sorted set：有序集合）：redis zset和set都是string类型元素的集合，且不允许重复的成员，**不同的是每个元素都会关联一个double类型的分数**，redis正式通过分数来为集合中的成员进行从小到大的排序，zset的成员是唯一的，**但分数score却可以重复**
 
+1.List使用rpush和lpush操作入队列，lpop和rpop操作出队列，List支持多个生产者和消费者并发进出消息，每个消费者拿到都是不同的列表元素
+
+缺点：
+> - 不能做广播模式，如pub/sub，消息发布/订阅模型
+> - 不能重复消费，一旦消费就会被删除
+> - 不支持分组消费
+> - 做消费者确认ACK麻烦，不能保证消费者消费消息后是否成功处理的问题（宕机或处理异常等），通常需要维护一个Pending列表，保证消息处理确认
+
+2.ZSet可以制作一个有序的消息队列
+
+优点：
+> - 就是可以自定义消息ID，在消息ID有意义时，比较重要
+> - 缺点也明显，不允许重复消息（因为是集合），同时消息ID确定有错误会导致消息的顺序出错
+
 ### 6、过期时间策略
 
 > - Volatile-lru：最近最少使用，使用LRU算法移除key，只对设置了过期时间的键
@@ -188,18 +202,111 @@ AOF劣势：
 
 能干嘛：一个队列中，一次性，顺序性，排他性的执行一系列命令。
 
-怎么玩：MULTI开启,不一定开启成功;EXEC执行，DISCARD丢弃事务;WATCH监控一个或多个key，如果在事务执行之前这些key被其他命令所开动给，那么事务将被打断
+怎么玩：MULTI开启,不一定开启成功;EXEC执行，DISCARD丢弃事务;WATCH监控一个或多个key，如果在事务执行之前这些key被其他命令所改动，那么事务将被打断
 
 **redis对事务的支持是部分支持**，在执行事务的过程就报错会牵连所有操作，但在执行事务时才报错则不会影响其他的操作
 
 
 表锁、行锁，列锁，间隙锁
 
-### 10、redis的发布订阅（了解）
+### 10、redis的发布订阅
+
+参考：https://blog.csdn.net/w05980598/article/details/80444717
 
 1. 概念：进程间的一种消息通信模式，发送者（pub）发送消息，订阅者（sub）接收消息
 
-### 11、redis的主从复制
+PUBLISH:
+
+![image-20200213174402111](assets/publish.jpg)
+
+SUBSCRIBE:
+
+![image-20200213174402111](assets/subscribe.jpg)
+
+> 针对于有共同前缀的多个channel的订阅，只需将subscribe改成psubscribe channe*即可
+
+![image-20200213174402111](assets/p_publish.jpg)
+
+![image-20200213174402111](assets/p_subscribe.jpg)
+
+取消订阅：UNSUBSCRIBE、PUNSUBSCRIBE
+
+优点：
+> - 典型的广播模式，一个消息可以发布到多个消费者
+> - 多信道订阅，消费者可以同时订阅多个信道，从而接收多类消息
+> - 消息即时发送，消息不用等待消费者读取，消费者会自动接收到信道发布的消息
+
+缺点:
+> - 消息一旦发布，不能接收。换句话就是发布时若客户端不在线，则消息丢失，不能寻回
+> - 不能保证每个消费者接收的时间是一致的
+> - 若消费者客户端出现消息积压，到一定程度，会被强制断开，导致消息意外丢失。通常发生在消息的生产远大于消费速度时
+
+**总结：可见，Pub/Sub 模式不适合做消息存储，消息积压类的业务，而是擅长处理广播，即时通讯，即时反馈的业务**
+
+补充：
+
+**List结构可实现消息队列，和发布订阅可作同样的功能，List支持多个生产者和消费者并发进出消息，每个消费者拿到都是不同的列表元素，但针对List的读，需改为brpop和blpop实现阻塞读取，原先的lpop和rpop实现读取时，在当队列为空，会一直空轮询直至有数据，消耗资源，而blpop和brpop阻塞读在队列没有数据的时候进入休眠状态，一旦数据到来则立刻醒过来，消息延迟几乎为零，但这种情况无法避免长时间空闲连接的问题，如果线程一直阻塞在那里，Redis客户端的连接就成了闲置连接，闲置过久，服务器一般会主动断开连接，减少闲置资源占用，这个时候blpop和brpop或抛出异常，所以在编写客户端消费者的时候要小心，如果捕获到异常，还有重试**
+
+### 11、redis stream
+
+参考1：https://blog.csdn.net/enmotech/article/details/81230531
+
+参考2：https://redis.io/topics/streams-intro
+
+参考3：https://my.oschina.net/u/3049601/blog/1822884
+
+![image-20200213174402111](assets/stream.jpg)
+
+> - Stream为redis 5.0后新增的数据结构。支持多播的可持久化消息队列，实现借鉴了Kafka设计
+> - Redis Stream的结构如上图所示，它有一个消息链表，将所有加入的消息都串起来，每个消息都有一个唯一的ID和对应的内容。消息是持久化的，Redis重启后，内容还在
+> - 每个Stream都有唯一的名称，它就是Redis的key，在我们首次使用xadd指令追加消息时自动创建
+> - 每个Stream都可以挂多个消费组，每个消费组会有个游标last_delivered_id在Stream数组之上往前移动，表示当前消费组已经消费到哪条消息了。每个消费组都有一个Stream内唯一的名称，消费组不会自动创建，它需要单独的指令xgroup create进行创建，需要指定从Stream的某个消息ID开始消费，这个ID用来初始化last_delivered_id变量
+> - 每个消费组(Consumer Group)的状态都是独立的，相互不受影响。也就是说同一份Stream内部的消息会被每个消费组都消费到
+> - 同一个消费组(Consumer Group)可以挂接多个消费者(Consumer)，这些消费者之间是竞争关系，任意一个消费者读取了消息都会使游标last_delivered_id往前移动。每个消费者者有一个组内唯一名称
+> - 消费者(Consumer)内部会有个状态变量pending_ids，它记录了当前已经被客户端读取的消息，但是还没有ack。如果客户端没有ack，这个变量里面的消息ID会越来越多，一旦某个消息被ack，它就开始减少。这个pending_ids变量在Redis官方被称之为PEL，也就是Pending Entries List，这是一个很核心的数据结构，它用来确保客户端至少消费了消息一次，而不会在网络传输的中途丢失了没处理
+
+命令：
+> - xadd 追加消息
+> - xdel 删除消息，这里的删除仅仅是设置了标志位，不影响消息总长度
+> - xrange 获取消息列表，会自动过滤已经删除的消息
+> - xlen 消息长度
+> - del 删除Stream
+
+![image-20200213174402111](assets/stream_xadd.jpg)
+
+独立消费：
+> - 我们可以在不定义消费组的情况下进行Stream消息的独立消费，当Stream没有新消息时，甚至可以阻塞等待。Redis设计了一个单独的消费指令xread，可以将Stream当成普通的消息队列(list)来使用。使用xread时，我们可以完全忽略消费组(Consumer Group)的存在，就好比Stream就是一个普通的列表(list)
+
+监听：xread block 0 count 1 streams myRedis $
+
+**block 0表示永远阻塞，直到消息到来，block 1000表示阻塞1s，如果1s内没有任何消息到来，就返回nil**
+
+![image-20200213174402111](assets/stream_xread.jpg)
+
+![image-20200213174402111](assets/stream_xread_xadd.jpg)
+
+创建消费组：
+> - Stream通过xgroup create指令创建消费组(Consumer Group)，需要传递起始消息ID参数用来初始化last_delivered_id变量
+
+![image-20200213174402111](assets/create_cg.jpg)
+
+**0-0表示从头消费，$表示从尾部消费**
+
+消费：
+> - Stream提供了xreadgroup指令可以进行消费组的组内消费，需要提供消费组名称、消费者名称和起始消息ID。它同xread一样，也可以阻塞等待新消息。读到新消息后，对应的消息ID就会进入消费者的PEL(正在处理的消息)结构里，客户端处理完毕后使用xack指令通知服务器，本条消息已经处理完毕，该消息ID就会从PEL中移除
+
+![image-20200213174402111](assets/cg_block.jpg)
+
+Stream消息过多：
+> - redis提供了一个定长Stream功能。在xadd的指令提供一个定长长度maxlen，就可以将老的消息干掉，确保最多不超过指定长度，eg.xadd codehole maxlen 3 * name xiaorui age 1
+
+分区Partition：
+> - Redis没有原生支持分区的能力，想要使用分区，需要分配多个Stream，然后在客户端使用一定的策略来讲消息放入不同的stream
+
+总结：
+> - Stream的消费模型借鉴了kafka的消费分组的概念，它弥补了Redis Pub/Sub不能持久化消息的缺陷。但是它又不同于kafka，kafka的消息可以分partition，而Stream不行。如果非要分parition的话，得在客户端做，提供不同的Stream名称，对消息进行hash取模来选择往哪个Stream里塞
+
+### 12、redis的主从复制
 
 1. 概念：主机数据更新后根据配置和策略，自动同步到备机的master/slave机制，master以写为主，slave以读为主
 
