@@ -635,3 +635,14 @@ redis 分布式锁原理2(优化版)，双重防死锁
 > - lockvalueB == null || lockvalueA==lockvalueB，判断：若果lockvalueB为null，说明该锁已经被释放了，此时该进程可以获取锁；旧值与返回的lockvalueB一致说明中间未被其他进程获取该锁，可以获取锁；否则不能获取锁，结束，获取锁失败
 
 参考文章：https://blog.csdn.net/dazou1/article/details/88088223
+
+### 2、redis通讯协议
+
+> - RESP（REdis Serialization Protocol），RESP 是redis客户端和服务端之前使用的一种通讯协议，
+> - RESP 是redis客户端和服务端之前使用的一种通讯协议；
+> - RESP 的特点：实现简单、快速解析、可读性好
+> - For Simple Strings the first byte of the reply is "+" 回复
+> - For Errors the first byte of the reply is "-" 错误
+> - For Integers the first byte of the reply is ":" 整数
+> - For Bulk Strings the first byte of the reply is "$" 字符串
+> - For Arrays the first byte of the reply is "*" 数组
