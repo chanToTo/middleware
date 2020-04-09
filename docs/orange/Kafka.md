@@ -228,6 +228,40 @@ kafka从0.11版本开始引入事务支持，事务可以保证kafka在Exactly O
 
 ![image](./assets/producer消息发送流程.jpg)
 
+2.kafka异步发送
+
+配置：
+```xml
+<bean id="kafkaProducer" class="com.xx.xx.KafkaProducer" init-method="init" destroy-method="destroy">
+    <property name="properties">
+        <map>
+            <entry key="metadata.broker.list" value="${kafka.service.metadata.broker.list}" />
+            <entry key="serializer.class" value="kafka.serializer.StringEncoder" />
+            <entry key="key.serializer.class" value="kafka.serializer.StringEncoder" />
+            <entry key="request.required.acks" value="-1" />
+            <entry key="producer.type" value="async" />
+            <entry key="queue.enqueue.timeout.ms" value="-1" />
+            <entry key="compression.codec" value="1" />
+        </map>  
+    </property>
+    <property name="topic" value="${kafka.topic.dfs.contacts.upload}"/>
+</bean>
+```
+> - producer.type=async使 Kafka 异步发送消息
+
+asyncSend将会把消息加入到LinkedBlockingQueue阻塞队列中。这里根据config.queueEnqueueTimeoutMs参数使用不同方法:
+> - config.queueEnqueueTimeoutMs=0: 会调用LinkedBlockingQueue#offer，如果该队列未满，将会把元素插入队列队尾。如果队列未满，直接返回false，所以如果此时队列已满，消息不再会加入队列中，然后asyncSend将会抛出 QueueFullException 异常。
+> - config.queueEnqueueTimeoutMs < 0,将会调用 LinkedBlockingQueue#put 加入元素，如果该队列已满，该方法将会一直被阻塞直到队列存在可用空间。
+> - config.queueEnqueueTimeoutMs > 0,将会调用 LinkedBlockingQueue#offer，这里与上面不同之处在于设置超时时间，如果队列已满将会阻塞知道超时。
+
+> config.queueEnqueueTimeoutMs参数通过 queue.enqueue.timeout.ms 配置生效，默认为 -1。默认情况下 LinkedBlockingQueue 最大数量为 10000，可以通过设置 queue.buffering.max.messages 改变队列最大值。
+
+异步线程将会不断从队列中获取任务，一旦条件满足，就会批量发送任务。该条件为：
+> - 批量消息数量达到 200，可以设置 batch.num.messages 参数改变配置。
+> - 等待时间到达最大的超时时间，默认为 5000ms，可以设置 queue.buffering.max.ms 改变改配置。
+
+异步参考链接：https://www.cnblogs.com/goodAndyxublog/p/11637760.html
+
 **小结：哪些follower可以进入ISR，0.9版本之后看同步时间，0.9版本之前还要看数据量，具体详情参考12处，ISR中HW，LEO（同一个分区里面，多个副本，每个副本最后一个offset就是LEO，HW高水位指消费 者可见的最小的offset）概念；观察是否丢失数据或者重复数据，看生产者中的ack机制，保证存储数据一致性，截取HW，新leader的HW后面的补上所有截取后的尾巴**
 
 ### 25、自定义存储offset
