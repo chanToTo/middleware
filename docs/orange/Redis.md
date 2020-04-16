@@ -611,30 +611,8 @@ redis-cli -c：会实现自动重定向，不是一个slot下的键值，是不�
 > - expire 命令格式：EXPIRE key seconds，使用：为给定 key 设置生存时间，当 key 过期时(生存时间为 0 )，它会被自动删除。返回值：设置成功返回 1 。 当 key 不存在或者不能为 key 设置生存时间时(比如在低于 2.1.3 版本的 Redis 中你尝试更新 key 的生存时间)，返回 0 
 > - del 命令格式：DEL key [key …]，使用：删除给定的一个或多个 key ，不存在的 key 会被忽略。返回值：被删除 key 的数量。
 
-redis分布式锁原理（1）
-
-![image](assets/redis分布式锁原理1.jpg)
-
-过程分析：
-> - A尝试去获取锁lockkey，通过setnx(lockkey,currenttime+timeout)命令，对lockkey进行setnx,将value值设置为当前时间+锁超时时间
-> - 如果返回值为1，说明redis服务器中还没有lockkey，也就是没有其他用户拥有这个锁，A就能获取锁成功
-> - 在进行相关业务执行之前，先执行expire(lockkey)，对lockkey设置有效期，防止死锁。因为如果不设置有效期的话，lockkey将一直存在于redis中，其他用户尝试获取锁时，执行到setnx(lockkey,currenttime+timeout)时，将不能成功获取到该锁
-> - 执行相关业务
-> - 释放锁，A完成相关业务之后，要释放拥有的锁，也就是删除redis中该锁的内容，del(lockkey)，接下来的用户才能进行重新设置锁新值
-
-redis 分布式锁原理2(优化版)，双重防死锁
-
-![image](assets/redis分布式锁原理2.jpg)
-
-过程分析：
-> - 当A通过setnx(lockkey,currenttime+timeout)命令能成功设置lockkey时，即返回值为1，过程与原理1一致
-> - 当A通过setnx(lockkey,currenttime+timeout)命令不能成功设置lockkey时，这是不能直接断定获取锁失败；因为我们在设置锁时，设置了锁的超时时间timeout，当当前时间大于redis中存储键值为lockkey的value值时，可以认为上一任的拥有者对锁的使用权已经失效了，A就可以强行拥有该锁；具体判定过程如下
-> - A通过get(lockkey)，获取redis中的存储键值为lockkey的value值，即获取锁的相对时间lockvalueA
-> - lockvalueA!=null && currenttime>lockvalue，A通过当前的时间与锁设置的时间做比较，如果当前时间已经大于锁设置的时间临界，即可以进一步判断是否可以获取锁，否则说明该锁还在被占用，A就还不能获取该锁，结束，获取锁失败
-> - 步骤4返回结果为true后，通过getSet设置新的超时时间，并返回旧值lockvalueB，以作判断，因为在分布式环境，在进入这里时可能另外的进程获取到锁并对值进行了修改，只有旧值与返回的值一致才能说明中间未被其他进程获取到这个锁
-> - lockvalueB == null || lockvalueA==lockvalueB，判断：若果lockvalueB为null，说明该锁已经被释放了，此时该进程可以获取锁；旧值与返回的lockvalueB一致说明中间未被其他进程获取该锁，可以获取锁；否则不能获取锁，结束，获取锁失败
-
-参考文章：https://blog.csdn.net/dazou1/article/details/88088223
+参考文章：https://www.cnblogs.com/rgcLOVEyaya/p/RGC_LOVE_YAYA_1003days.html
+        
 
 ### 2、redis通讯协议
 
