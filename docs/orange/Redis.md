@@ -58,7 +58,6 @@ maxmemory 122000000 redis配置的最大内存容量。当内存满了，需要�
 #volatile-random：随机移除设置过过期时间的key。
 #volatile-ttl：移除即将过期的key，根据最近过期时间来删除（辅以TTL）
 #allkeys-lru：利用LRU算法移除任何key。
-#allkeys-lru：利用LRU算法移除任何key。
 #allkeys-random：随机移除任何key。
 #noeviction：不移除任何key，只是返回一个写错误。
 #上面的这些驱逐策略，如果redis没有合适的key驱逐，对于写命令，还是会返回错误。redis将不再接收写请求，只接收get请求。写命令包括：set setnx setex append incr decr rpush lpush rpushx lpushx linsert lset rpoplpush sadd sinter sinterstore sunion sunionstore sdiff sdiffstore zadd zincrby zunionstore zinterstore hset hsetnx hmset hincrby incrby decrby getset mset msetnx exec sort。
@@ -223,7 +222,7 @@ SUBSCRIBE:
 
 ![image-20200213174402111](assets/subscribe.jpg)
 
-> 针对于有共同前缀的多个channel的订阅，只需将subscribe改成psubscribe channe*即可
+> 针对于有共同前缀的多个channel的订阅，只需将subscribe改成psubscribe channel *即可
 
 ![image-20200213174402111](assets/p_publish.jpg)
 
@@ -245,7 +244,7 @@ SUBSCRIBE:
 
 补充：
 
-**List结构可实现消息队列，和发布订阅可作同样的功能，List支持多个生产者和消费者并发进出消息，每个消费者拿到都是不同的列表元素，但针对List的读，需改为brpop和blpop实现阻塞读取，原先的lpop和rpop实现读取时，在当队列为空，会一直空轮询直至有数据，消耗资源，而blpop和brpop阻塞读在队列没有数据的时候进入休眠状态，一旦数据到来则立刻醒过来，消息延迟几乎为零，但这种情况无法避免长时间空闲连接的问题，如果线程一直阻塞在那里，Redis客户端的连接就成了闲置连接，闲置过久，服务器一般会主动断开连接，减少闲置资源占用，这个时候blpop和brpop或抛出异常，所以在编写客户端消费者的时候要小心，如果捕获到异常，还有重试**
+**List结构可实现消息队列，和发布订阅可作同样的功能，List支持多个生产者和消费者并发进出消息，每个消费者拿到都是不同的列表元素，但针对List的读，需改为brpop和blpop实现阻塞读取，原先的lpop和rpop实现读取时，在当队列为空，会一直空轮询直至有数据，消耗资源，而blpop和brpop阻塞读在队列没有数据的时候进入休眠状态，一旦数据到来则立刻醒过来，消息延迟几乎为零，但这种情况无法避免长时间空闲连接的问题，如果线程一直阻塞在那里，Redis客户端的连接就成了闲置连接，闲置过久，服务器一般会主动断开连接，减少闲置资源占用，这个时候blpop和brpop或抛出异常，所以在编写客户端消费者的时候要小心，如果捕获到异常，还要重试**
 
 ### 11、redis stream
 
@@ -301,7 +300,7 @@ Stream消息过多：
 > - redis提供了一个定长Stream功能。在xadd的指令提供一个定长长度maxlen，就可以将老的消息干掉，确保最多不超过指定长度，eg.xadd codehole maxlen 3 * name xiaorui age 1
 
 分区Partition：
-> - Redis没有原生支持分区的能力，想要使用分区，需要分配多个Stream，然后在客户端使用一定的策略来讲消息放入不同的stream
+> - Redis没有原生支持分区的能力，想要使用分区，需要分配多个Stream，然后在客户端使用一定的策略来将消息放入不同的stream
 
 总结：
 > - Stream的消费模型借鉴了kafka的消费分组的概念，它弥补了Redis Pub/Sub不能持久化消息的缺陷。但是它又不同于kafka，kafka的消息可以分partition，而Stream不行。如果非要分parition的话，得在客户端做，提供不同的Stream名称，对消息进行hash取模来选择往哪个Stream里塞
@@ -478,13 +477,13 @@ aof文件持续增长而过大时，会fork出一条新进程来将文件重写�
 
 ### 8、配从不配主
 
-拷贝多个redis.conf文件include
-开启daemonize yes
-pid文件名字pidfile
-指定端口port
-log文件名字修改
-dump.rdb名字dbfilename
-appendonly关掉或者换名字
+> - 拷贝多个redis.conf文件include
+> - 开启daemonize yes
+> - pid文件名字pidfile
+> - 指定端口port
+> - log文件名字修改
+> - dump.rdb名字dbfilename
+> - appendonly关掉或者换名字
 
 
 1. 容量不够，redis如何进行扩容
@@ -612,7 +611,6 @@ redis-cli -c：会实现自动重定向，不是一个slot下的键值，是不�
 > - del 命令格式：DEL key [key …]，使用：删除给定的一个或多个 key ，不存在的 key 会被忽略。返回值：被删除 key 的数量。
 
 参考文章：https://www.cnblogs.com/rgcLOVEyaya/p/RGC_LOVE_YAYA_1003days.html
-        
 
 ### 2、redis通讯协议
 
@@ -624,3 +622,12 @@ redis-cli -c：会实现自动重定向，不是一个slot下的键值，是不�
 > - For Integers the first byte of the reply is ":" 整数
 > - For Bulk Strings the first byte of the reply is "$" 字符串
 > - For Arrays the first byte of the reply is "*" 数组
+
+### 3、redis线程模型
+
+> 文件事件处理器包括分别是套接字、 I/O 多路复用程序、 文件事件分派器（dispatcher）、 以及事件处理器。使用 I/O 多路复用程序来同时监听多个套接字， 并根据套接字目前执行的任务来为套接字关联不同的事件处理器。当被监听的套接字准备好执行连接应答（accept）、读取（read）、写入（write）、关闭（close）等操作时， 与操作相对应的文件事件就会产生， 这时文件事件处理器就会调用套接字之前关联好的事件处理器来处理这些事件。I/O 多路复用程序负责监听多个套接字， 并向文件事件分派器传送那些产生了事件的套接字。
+
+工作原理：
+> I/O 多路复用程序负责监听多个套接字， 并向文件事件分派器传送那些产生了事件的套接字。尽管多个文件事件可能会并发地出现， 但 I/O 多路复用程序总是会将所有产生事件的套接字都入队到一个队列里面， 然后通过这个队列， 以有序（sequentially）、同步（synchronously）、每次一个套接字的方式向文件事件分派器传送套接字： 当上一个套接字产生的事件被处理完毕之后（该套接字为事件所关联的事件处理器执行完毕）， I/O 多路复用程序才会继续向文件事件分派器传送下一个套接字。如果一个套接字又可读又可写的话， 那么服务器将先读套接字， 后写套接字。
+
+![image](assets/redis线程模型.jpg)
